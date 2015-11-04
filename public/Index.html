@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="js/dist/paper-full.js"></script>
+<script type="text/paperscript" canvas="paper">//Script lié au canvas
+
+var host=window.location.host; //Adresse de l'host
+ws = new WebSocket('wss://'+host);
+ws.onopen = function (event) {};
+
+var tab=[];
+var myindex; //index du Snake du client
+var vitesse =5; //Variable de vitesse
+var candyCount=0; //Compteur du nombre de bonbon déjà affiché
+var candy; //Objet graphique du bonbon
+
+var Vector =new Point(1200, 800)* Point.random(); //Vector de direction
+Vector.length = vitesse; //Vitesse du vecteur
+
+//Fonction d'ajout d'un bonbon
+function popCandy(posx,posy,exist){
+	//Si c'est le premier bonbon, le creer
+	if(!exist){
+		var cercle=new Path.Circle(posx,posy, 10);
+		cercle.fillColor= new Color(Math.random(), Math.random(), Math.random());		
+		candy = cercle;
+	}
+	//Sinon changer la position du bonbon
+	else{
+		candy.position.x=posx;
+		candy.position.y=posy;
+	}
+}
+
+//Event lors du click
+function onMouseDown(event) {
+	Vector = event.point - tab[myindex][0].position; //Vector du click
+	Vector.length = vitesse; //Vitesse du vector
+	var message = { 
+				type : "tete",
+				x : Vector.x,
+				y : Vector.y
+			};
+
+	ws.send(JSON.stringify(message));
+}
+
+//Frame 
+function onFrame(event) {
+//Action a réalisé lors de la récéption d'un message
+ws.onmessage = function (message) 
+{ 
+	var msg = JSON.parse(message.data);
+	switch(msg.type)
+	{	
+		case "majsnake" :
+			myindex = msg.index;
+			Snake = msg.Snake;
+			Out = msg.Out;
+
+			//Si un bonbon a déjà été affiché
+			if(candyCount>0){
+				//Si la position du bonbon a changé
+				if(msg.Candy[0]!=candy.position.x && msg.Candy[1]!=candy.position.y){
+					popCandy(msg.Candy[0],msg.Candy[1],true);
+					candyCount+=1;
+				}
+			}
+			//Sinon en créer un
+			else{
+				popCandy(msg.Candy[0],msg.Candy[1],false);
+				candyCount+=1;
+			}
+
+			//Affichage du score
+			writeScore(Snake,myindex,Out);
+			
+			for(var y=0;y<Snake.length;y++){
+				//Si le Snake existe déjà
+				if(y+1<=tab.length){
+					//Si le Snake y n'est pas éliminé
+					if(Out[y]==false){
+						//Si le Snake a grandi ajouter des cercles
+						if(Snake[y].length!=tab[y].length){
+							for(var l= tab[y].length; l< Snake[y].length;l++){
+								var cercle=new Path.Circle(Snake[y][l].x,Snake[y][l].y, 10);
+								cercle.fillColor= new Color(Math.random(), Math.random(), Math.random());
+								tab[y].push(cercle);
+							}
+						}
+
+						//Mise a jour de la position des cercles
+						for (var i=0; i<Snake[y].length;i++){
+							tab[y][i].position.x = Snake[y][i].x;
+							tab[y][i].position.y = Snake[y][i].y;	
+						}
+					}
+					//Si il est éliminé, retirer les cercles de zone du jeu
+					else{
+						for(var o=0;o<tab[y].length;o++){
+							tab[y][o].remove();
+						}
+					}
+				}
+				//Si il n'existe pas, le créer
+				else{
+					var color = new Color(Math.random(),Math.random(),Math.random());
+					var TabCircle=[];
+					//Boucle de création des cercles du Snake
+					for (var i=0; i<Snake[y].length;i++){
+						var cercle=new Path.Circle(Snake[y][i].x,Snake[y][i].y, 10);
+						cercle.fillColor= color;
+						TabCircle.push(cercle);
+					}
+					tab.push(TabCircle);
+				}
+			}			
+	}
+
+};}
+
+//Fonction d'écriture du score
+function writeScore(tab,index,tabout){
+	var element = document.getElementById("score");
+	element.innerHTML=""; //Supprimer les scores actuelles et les balises p
+	//Boucle pour tout les Gamers qui ont existé dans la partie
+	for(var i=0;i<tab.length;i++){ 
+		var p = document.createElement("p"); //Création de nouvelle balise p
+		//Si le Snake est celui du Gamer
+		if(i==myindex){
+			//Ecrire le numero du snake et son score, et indiquié qu'il est le sien
+			p.innerHTML="Snake "+i+"  -  "+tab[i].length+" (you)";
+			var scoret = document.getElementById("titlescore");
+			//Si le Gamer n'est pas OUT ecrire son score dans le h2 du score
+			if(tabout[i]!=true){
+				scoret.innerHTML=tab[i].length;
+			}
+			//Sinon ecrire son score dans le h2 du score ainsi qu'il est OUT
+			else{
+				scoret.innerHTML="OUT ! ("+tab[i].length+")";
+			}
+		}
+		//Sinon simplement écrire le numero du snake et son score
+		else{
+			p.innerHTML="Snake "+i+"  -  "+tab[i].length;
+		}
+		
+		//Ajout des nouvelles balises de score à la div "score"
+		var element = document.getElementById("score");
+		element.appendChild(p);
+	}
+}	
+</script>
+
+<title>Worms</title>
+</head>
+<body>
+	<h1>Worms</h1>
+	<img src="worms.png" style="width: 100px; height: 100px">
+	<canvas id="paper" width="1200" height="800" keepalive="true"
+		style="background-color: #FAFAFA"></canvas>
+	<div style="right: 5%; position: absolute; top: 30%;">
+		<h2>Score:</h2>
+		<div id="score"></div>
+	</div>
+	<div style="right: 5%; position: absolute; top: 5%;">
+		<h1 id="titlescore"></h1>
+	</div>
+	<div style="right: 5%; position: absolute; bottom: 5%;">
+		<button id="replay" onclick="myFunct();">New Game !</button>
+	</div>
+	<script>
+		function myFunct() {
+			var btn = document.getElementById("replay");
+			btn.innerHTML = "5";
+			setTimeout(function() {
+				btn.innerHTML = "4";
+			}, 1000);
+			setTimeout(function() {
+				btn.innerHTML = "3";
+			}, 2000);
+			setTimeout(function() {
+				btn.innerHTML = "2";
+			}, 3000);
+			setTimeout(function() {
+				btn.innerHTML = "1";
+			}, 4000);
+			setTimeout(function() {
+				btn.innerHTML = "New Game !";
+				window.open('https://' + window.location.host, 'name',
+						'fullscreen=yes,top=0, left=0, ', true);
+			}, 5000);
+		}
+	</script>
+</body>
+</html>
